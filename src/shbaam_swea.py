@@ -181,11 +181,11 @@ print('Writing CSV file')
 # Using a predetermined datetime as a zero, time stamps are created by 
 # adding an existing time to the zero. The time stamps are used to write
 # their corresponding data into one row on the excel sheet. 
-time_stamp_zero = datetime.datetime.strptime('2002-01-01T00:00:00',                
+time_stamp_zero = datetime.datetime.strptime('2002-04-01T00:00:00',                
                                          '%Y-%m-%dT%H:%M:%S')
 time_stamps = []
 for time_step in range(time_dimension):
-     delta_t = datetime.timedelta(days = time_values[time_step])
+     delta_t = datetime.timedelta(hours = time_values[time_step])
      time_stamp = (time_stamp_zero + delta_t).strftime('%m/%d/%Y')
      time_stamps.append(time_stamp)
 
