@@ -12,10 +12,14 @@ import rtree
 import math
 import csv
 
+
 # Parsing command line arguments, point_file can be made a command line arg too if needed
 netcdf_file = sys.argv[1]
 shape_file = sys.argv[2]
 point_file = "../output/SERVIR_STK/GLDAS_VIC.pnt_tst.shp"
+
+output_csv = "../output/SERVIR_STK/timeseries_NorthWestBD_test.csv"
+output_nc4 = "../output/SERVIR_STK/map_NorthWestBD_test.nc4"
 
 
 # Opening files passed by command line args
@@ -29,8 +33,8 @@ polygons = fiona.open(shape_file, 'r')
 point_file_driver = polygons.driver
 point_file_coordrefsys = polygons.crs
 point_file_schema = {'geometry': 'Point',
-					'properties': {'lon': 'int:4',
-									'lat': 'int:4'}}
+					'properties': {'lon': 'float:4.4',
+									'lat': 'float:4.4'}}
 
  
 print("Creating points shape file")
@@ -92,6 +96,7 @@ for polygon in polygons:
 		point = points[point_id]
 		point_geom = shapely.geometry.shape(point['geometry'])
 		if prep_geom.contains(point_geom):
+			print(point["geometry"])
 			point_lon = point["properties"]['lon']
 			point_lat = point["properties"]["lat"]
 			interest_longitudes.append(point_lon)
@@ -103,5 +108,69 @@ print("Number of grid cells of interest: " + str(total_interest_cells))
 print("Latitudes of interest:", interest_latitudes)
 print("Longitude of interest:", interest_longitudes)
 
+print("Solving for long term means for values of SWE across the cells of interest")
 
+
+# Previously, the actual values for interest latitude and longitude were solved for.
+# However, the indices of the values relative to the nc4 data file are required to 
+# extract values for SWE. Eg: extracting the SWE value at 179.5 W, 59.5 S is accessed
+# by the index [0, 0] because the indices for the example lon, lat are 0. 
+# Here, the indices for the values of interest are extracted from the nc4 data file.
+int_lat_indices = []
+int_lon_indices = []
+for index in range(total_interest_cells):
+	int_lon_indices.append((nc4_data["lon"][:]).tolist().index(interest_longitudes[index]))
+	int_lat_indices.append((nc4_data["lat"][:]).tolist().index(interest_latitudes[index]))
+
+
+# Using the indices solved for above, the relevant SWE values at every available time
+# step are averaged and compiled into a list. 
+time_steps = len(nc4_data.dimensions["time"])
+long_term_means = [0] * total_interest_cells
+for index in range(total_interest_cells):
+     lon_index = int_lon_indices[index]
+     lat_index = int_lat_indices[index]
+     for time_step in range(time_steps):
+          long_term_means[index]=long_term_means[index]                        \
+                                +nc4_data.variables['SWE']                  \
+                                            [time_step,lat_index,lon_index]
+long_term_means=[x/time_steps for x in long_term_means]
+
+
+print(long_term_means)
+
+
+longitude_step_size = abs(nc4_data["lon"][1]-nc4_data["lon"][0])
+latitude_step_size = abs(nc4_data["lat"][1]-nc4_data["lat"][0])
+
+
+areas= []
+for lat_index in int_lat_indices:
+     latitude = nc4_data["lat"][lat_index]
+     areas.append(6371000*math.radians(latitude_step_size)               \
+                           *6371000*math.radians(longitude_step_size)               \
+                           *math.cos(math.radians(latitude)))
+total_area = sum(areas)
+
+
+anomalies=[]
+for time_step in range(time_steps):
+     anomaly_in_time=0
+     for index in range(total_interest_cells):
+          lon_index=int_lon_indices[index]
+          lat_index=int_lat_indices[index]
+          area=areas[index]
+          long_term_mean=long_term_means[index]
+          anomaly_in_area=(nc4_data.variables['SWE']                            \
+                                  [time_step,lat_index,lon_index]          \
+                      -long_term_mean                                    )/100     \
+                    *  area
+          anomaly_in_time+=anomaly_in_area
+     anomalies.append(100*anomaly_in_time / total_area)
+
+print('Check some computations')
+
+print('- Average of time series: '+str(numpy.average(anomalies)))
+print('- Maximum of time series: '+str(numpy.max(anomalies)))
+print('- Minimum of time series: '+str(numpy.min(anomalies)))
 
